@@ -31,14 +31,12 @@ import { CloudValidationError } from './errors.js'
  */
 
 export class CloudBackup {
-  /** @type {CloudProvider} */
-  #provider
-
   /**
    * @param {CloudProvider} provider
    */
   constructor (provider) {
-    this.#provider = provider
+    /** @private */
+    this._provider = provider
   }
 
   // -------------------------------------------------------------------------
@@ -56,8 +54,8 @@ export class CloudBackup {
    * @throws {CloudStorageError} if the write fails.
    */
   async uploadEncryptedKey (key) {
-    this.#validateKey(key)
-    return await this.#provider.upload(key)
+    this._validateKey(key)
+    return await this._provider.upload(key)
   }
 
   /**
@@ -69,7 +67,7 @@ export class CloudBackup {
    * @throws {CloudStorageError} if the read fails.
    */
   async downloadEncryptedKey () {
-    return await this.#provider.download()
+    return await this._provider.download()
   }
 
   /**
@@ -82,7 +80,7 @@ export class CloudBackup {
    * @throws {CloudStorageError} if the delete fails.
    */
   async deleteBackup () {
-    return await this.#provider.delete()
+    return await this._provider.delete()
   }
 
   /**
@@ -91,7 +89,7 @@ export class CloudBackup {
    * @returns {Promise<boolean>} `true` if available, `false` otherwise (never throws).
    */
   async isAvailable () {
-    return await this.#provider.isAvailable()
+    return await this._provider.isAvailable()
   }
 
   /**
@@ -101,18 +99,15 @@ export class CloudBackup {
    * @returns {Promise<boolean>} `true` if the backup file exists, `false` otherwise (never throws).
    */
   async exists () {
-    return await this.#provider.exists()
+    return await this._provider.exists()
   }
 
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
 
-  /**
-   * @param {string} key
-   * @returns {void}
-   */
-  #validateKey (key) {
+  /** @private */
+  _validateKey (key) {
     if (key.trim().length === 0) {
       throw new CloudValidationError(
         'Encrypted key must be a non-empty string'

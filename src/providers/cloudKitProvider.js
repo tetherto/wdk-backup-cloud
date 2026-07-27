@@ -76,58 +76,47 @@ const BACKUP_FIELD_KEYS = ['encryptionKey', 'savedAt', 'cloudEmail']
  * @implements {CloudProvider}
  */
 export class CloudKitProvider {
-  /** @type {string} */
-  #containerIdentifier
-  /** @type {'development' | 'production'} */
-  #environment
-  /** @type {string} */
-  #zoneName
-  /** @type {string} */
-  #recordName
-  /** @type {string} */
-  #recordType
-  /** @type {string} */
-  #cloudEmail
-  /** @type {() => Promise<CloudKitAuthContext>} */
-  #getCloudKitAuth
-  /** @type {typeof globalThis.fetch} */
-  #fetchFn = globalThis.fetch.bind(globalThis)
-  /** @type {number} */
-  #maxSyncRetries
-  /** @type {number} */
-  #syncRetryDelayMs
-  /** @type {number} */
-  #timeoutMs
-
   /**
-   * @param {CloudKitConfig} config
+   * @param {CloudKitConfig} config - Provider configuration.
+   * @throws {CloudValidationError} if `maxSyncRetries`, `syncRetryDelayMs`, or `timeout` are out of range.
    */
   constructor (config) {
-    this.#containerIdentifier = config.containerIdentifier
-    this.#environment = config.environment
-    this.#zoneName = config.zoneName ?? DEFAULT_ZONE_NAME
-    this.#recordName = config.recordName ?? DEFAULT_RECORD_NAME
-    this.#recordType = config.recordType ?? DEFAULT_RECORD_TYPE
-    this.#cloudEmail = config.cloudEmail ?? ''
-    this.#getCloudKitAuth = config.getCloudKitAuth
-    this.#maxSyncRetries = config.maxSyncRetries ?? DEFAULT_MAX_SYNC_RETRIES
-    this.#syncRetryDelayMs =
-      config.syncRetryDelayMs ?? DEFAULT_SYNC_RETRY_DELAY_MS
-    this.#timeoutMs = config.timeout ?? DEFAULT_TIMEOUT_MS
+    /** @private */
+    this._containerIdentifier = config.containerIdentifier
+    /** @private */
+    this._environment = config.environment
+    /** @private */
+    this._zoneName = config.zoneName ?? DEFAULT_ZONE_NAME
+    /** @private */
+    this._recordName = config.recordName ?? DEFAULT_RECORD_NAME
+    /** @private */
+    this._recordType = config.recordType ?? DEFAULT_RECORD_TYPE
+    /** @private */
+    this._cloudEmail = config.cloudEmail ?? ''
+    /** @private */
+    this._getCloudKitAuth = config.getCloudKitAuth
+    /** @private */
+    this._fetchFn = globalThis.fetch.bind(globalThis)
+    /** @private */
+    this._maxSyncRetries = config.maxSyncRetries ?? DEFAULT_MAX_SYNC_RETRIES
+    /** @private */
+    this._syncRetryDelayMs = config.syncRetryDelayMs ?? DEFAULT_SYNC_RETRY_DELAY_MS
+    /** @private */
+    this._timeoutMs = config.timeout ?? DEFAULT_TIMEOUT_MS
 
-    if (!Number.isInteger(this.#maxSyncRetries) || this.#maxSyncRetries < 1) {
+    if (!Number.isInteger(this._maxSyncRetries) || this._maxSyncRetries < 1) {
       throw new CloudValidationError(
         'CloudKitConfig.maxSyncRetries must be an integer >= 1'
       )
     }
 
-    if (!Number.isFinite(this.#syncRetryDelayMs) || this.#syncRetryDelayMs < 0) {
+    if (!Number.isFinite(this._syncRetryDelayMs) || this._syncRetryDelayMs < 0) {
       throw new CloudValidationError(
         'CloudKitConfig.syncRetryDelayMs must be a number >= 0'
       )
     }
 
-    if (!Number.isFinite(this.#timeoutMs) || this.#timeoutMs <= 0) {
+    if (!Number.isFinite(this._timeoutMs) || this._timeoutMs <= 0) {
       throw new CloudValidationError(
         'CloudKitConfig.timeout must be a number greater than 0'
       )
@@ -139,27 +128,33 @@ export class CloudKitProvider {
   // -------------------------------------------------------------------------
 
   /**
-   * @param {string} encryptedKey
-   * @returns {Promise<CloudEncryptionKeyFile>}
+   * Store the encrypted master key in the CloudKit private database,
+   * overwriting any existing record, then verify the write succeeded.
+   *
+   * @param {string} encryptedKey - The encrypted wallet master key.
+   * @returns {Promise<CloudEncryptionKeyFile>} The stored backup payload.
+   * @throws {CloudAuthError} if the CloudKit user is not signed in.
+   * @throws {CloudUnavailableError} if CloudKit is unreachable.
+   * @throws {CloudStorageError} if the write fails, the quota is exceeded, or it cannot be verified.
    */
   async upload (encryptedKey) {
-    await this.#assertAvailable()
+    await this._assertAvailable()
 
     /** @type {CloudEncryptionKeyFile} */
     const payload = {
       encryptionKey: encryptedKey,
       savedAt: new Date().toISOString(),
-      cloudEmail: this.#cloudEmail
+      cloudEmail: this._cloudEmail
     }
 
     try {
-      await this.#saveRecord(payload)
+      await this._saveRecord(payload)
     } catch (cause) {
-      throw this.#mapError(cause, 'Failed to write backup to CloudKit')
+      throw this._mapError(cause, 'Failed to write backup to CloudKit')
     }
 
     try {
-      const verified = await this.#recordExists()
+      const verified = await this._recordExists()
       if (!verified) {
         throw new CloudStorageError(
           'CloudKit backup failed: record not found after write'
@@ -168,55 +163,67 @@ export class CloudKitProvider {
       return payload
     } catch (cause) {
       if (cause instanceof CloudStorageError) throw cause
-      throw this.#mapError(cause, 'Failed to verify CloudKit backup')
+      throw this._mapError(cause, 'Failed to verify CloudKit backup')
     }
   }
 
   /**
-   * @returns {Promise<CloudEncryptionKeyFile | null>}
+   * Retrieve the stored backup record from CloudKit, retrying transient
+   * failures up to `maxSyncRetries` times.
+   *
+   * @returns {Promise<CloudEncryptionKeyFile | null>} The backup payload, or `null` if none exists.
+   * @throws {CloudAuthError} if the CloudKit user is not signed in.
+   * @throws {CloudUnavailableError} if CloudKit is unreachable.
+   * @throws {CloudStorageError} if the read fails or the record is malformed.
    */
   async download () {
-    await this.#assertAvailable()
+    await this._assertAvailable()
 
-    const exists = await this.#recordExists()
+    const exists = await this._recordExists()
     if (!exists) return null
 
     /** @type {unknown} */
     let lastError
-    for (let attempt = 1; attempt <= this.#maxSyncRetries; attempt++) {
+    for (let attempt = 1; attempt <= this._maxSyncRetries; attempt++) {
       try {
-        const record = await this.#lookupRecord()
+        const record = await this._lookupRecord()
         if (!record) return null
-        return this.#recordToPayload(record)
+        return this._recordToPayload(record)
       } catch (cause) {
         lastError = cause
         if (cause instanceof CloudStorageError) throw cause
-        if (this.#isAuthError(cause)) {
-          throw this.#mapError(cause, 'Failed to read backup from CloudKit')
+        if (this._isAuthError(cause)) {
+          throw this._mapError(cause, 'Failed to read backup from CloudKit')
         }
-        if (attempt < this.#maxSyncRetries) {
-          await new Promise((resolve) => setTimeout(resolve, this.#syncRetryDelayMs))
+        if (attempt < this._maxSyncRetries) {
+          await new Promise((resolve) => setTimeout(resolve, this._syncRetryDelayMs))
         }
       }
     }
 
-    throw this.#mapError(
+    throw this._mapError(
       lastError,
-      `Failed to read backup from CloudKit after ${this.#maxSyncRetries} attempts`
+      `Failed to read backup from CloudKit after ${this._maxSyncRetries} attempts`
     )
   }
 
   /**
+   * Permanently delete the backup record from CloudKit. Idempotent — a
+   * missing record is treated as success.
+   *
    * @returns {Promise<void>}
+   * @throws {CloudAuthError} if the CloudKit user is not signed in.
+   * @throws {CloudUnavailableError} if CloudKit is unreachable.
+   * @throws {CloudStorageError} if the record lacks a `recordChangeTag` or the delete fails.
    */
   async delete () {
-    await this.#assertAvailable()
+    await this._assertAvailable()
 
-    const record = await this.#lookupRecord()
+    const record = await this._lookupRecord()
     if (!record) return
 
     try {
-      await this.#deleteRecord(record)
+      await this._deleteRecord(record)
     } catch (cause) {
       if (
         cause instanceof CloudStorageError ||
@@ -225,16 +232,19 @@ export class CloudKitProvider {
       ) {
         throw cause
       }
-      throw this.#mapError(cause, 'Failed to delete backup from CloudKit')
+      throw this._mapError(cause, 'Failed to delete backup from CloudKit')
     }
   }
 
   /**
-   * @returns {Promise<boolean>}
+   * Lightweight probe that checks whether CloudKit is reachable and the
+   * user is authenticated.
+   *
+   * @returns {Promise<boolean>} `true` if available, `false` otherwise (never throws).
    */
   async isAvailable () {
     try {
-      await this.#probeCloudKit()
+      await this._probeCloudKit()
       return true
     } catch {
       return false
@@ -242,13 +252,15 @@ export class CloudKitProvider {
   }
 
   /**
-   * @returns {Promise<boolean>}
+   * Check whether a backup record exists without returning its content.
+   *
+   * @returns {Promise<boolean>} `true` if a backup exists, `false` otherwise (never throws).
    */
   async exists () {
     try {
       const available = await this.isAvailable()
       if (!available) return false
-      return await this.#recordExists()
+      return await this._recordExists()
     } catch {
       return false
     }
@@ -258,36 +270,24 @@ export class CloudKitProvider {
   // CloudKit API helpers
   // -------------------------------------------------------------------------
 
-  /**
-   * @param {string} path
-   * @param {string} apiToken
-   * @returns {string}
-   */
-  #databaseUrl (path, apiToken) {
-    const base = `${CLOUDKIT_API_BASE}/${encodeURIComponent(this.#containerIdentifier)}/${this.#environment}/private/${path}`
+  /** @private */
+  _databaseUrl (path, apiToken) {
+    const base = `${CLOUDKIT_API_BASE}/${encodeURIComponent(this._containerIdentifier)}/${this._environment}/private/${path}`
     return `${base}?ckAPIToken=${encodeURIComponent(apiToken)}`
   }
 
-  /**
-   * @returns {{ zoneName: string }}
-   */
-  #zoneId () {
-    return { zoneName: this.#zoneName }
+  /** @private */
+  _zoneId () {
+    return { zoneName: this._zoneName }
   }
 
-  /**
-   * @param {string} path
-   * @param {CloudKitAuthContext} auth
-   * @param {unknown} body
-   * @param {string} [method]
-   * @returns {Promise<Response>}
-   */
-  async #cloudKitRequest (path, auth, body, method = 'POST') {
+  /** @private */
+  async _cloudKitRequest (path, auth, body, method = 'POST') {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs)
+    const timeout = setTimeout(() => controller.abort(), this._timeoutMs)
 
     try {
-      return await this.#fetchFn(this.#databaseUrl(path, auth.apiToken), {
+      return await this._fetchFn(this._databaseUrl(path, auth.apiToken), {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -310,19 +310,17 @@ export class CloudKitProvider {
     }
   }
 
-  /**
-   * @returns {Promise<void>}
-   */
-  async #probeCloudKit () {
-    const auth = await this.#getCloudKitAuth()
-    const response = await this.#cloudKitRequest('records/lookup', auth, {
+  /** @private */
+  async _probeCloudKit () {
+    const auth = await this._getCloudKitAuth()
+    const response = await this._cloudKitRequest('records/lookup', auth, {
       records: [
         {
-          recordName: this.#recordName,
+          recordName: this._recordName,
           desiredKeys: [...BACKUP_FIELD_KEYS]
         }
       ],
-      zoneID: this.#zoneId()
+      zoneID: this._zoneId()
     })
 
     if (response.status === 401 || response.status === 403) {
@@ -330,23 +328,21 @@ export class CloudKitProvider {
     }
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'CloudKit availability check failed')
+      throw await this._httpError(response, 'CloudKit availability check failed')
     }
   }
 
-  /**
-   * @returns {Promise<CloudKitRecord | null>}
-   */
-  async #lookupRecord () {
-    const auth = await this.#getCloudKitAuth()
-    const response = await this.#cloudKitRequest('records/lookup', auth, {
+  /** @private */
+  async _lookupRecord () {
+    const auth = await this._getCloudKitAuth()
+    const response = await this._cloudKitRequest('records/lookup', auth, {
       records: [
         {
-          recordName: this.#recordName,
+          recordName: this._recordName,
           desiredKeys: [...BACKUP_FIELD_KEYS]
         }
       ],
-      zoneID: this.#zoneId()
+      zoneID: this._zoneId()
     })
 
     if (response.status === 401 || response.status === 403) {
@@ -354,7 +350,7 @@ export class CloudKitProvider {
     }
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'CloudKit record lookup failed')
+      throw await this._httpError(response, 'CloudKit record lookup failed')
     }
 
     const body = await response.json()
@@ -368,27 +364,22 @@ export class CloudKitProvider {
     return record
   }
 
-  /**
-   * @returns {Promise<boolean>}
-   */
-  async #recordExists () {
-    const record = await this.#lookupRecord()
+  /** @private */
+  async _recordExists () {
+    const record = await this._lookupRecord()
     return record !== null
   }
 
-  /**
-   * @param {CloudEncryptionKeyFile} payload
-   * @returns {Promise<void>}
-   */
-  async #saveRecord (payload) {
-    const auth = await this.#getCloudKitAuth()
-    const response = await this.#cloudKitRequest('records/modify', auth, {
+  /** @private */
+  async _saveRecord (payload) {
+    const auth = await this._getCloudKitAuth()
+    const response = await this._cloudKitRequest('records/modify', auth, {
       operations: [
         {
           operationType: 'forceUpdate',
           record: {
-            recordType: this.#recordType,
-            recordName: this.#recordName,
+            recordType: this._recordType,
+            recordName: this._recordName,
             fields: {
               encryptionKey: { value: payload.encryptionKey },
               savedAt: { value: payload.savedAt },
@@ -397,7 +388,7 @@ export class CloudKitProvider {
           }
         }
       ],
-      zoneID: this.#zoneId()
+      zoneID: this._zoneId()
     })
 
     if (response.status === 401 || response.status === 403) {
@@ -405,7 +396,7 @@ export class CloudKitProvider {
     }
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'CloudKit record save failed')
+      throw await this._httpError(response, 'CloudKit record save failed')
     }
 
     const body = await response.json()
@@ -415,30 +406,27 @@ export class CloudKitProvider {
     }
   }
 
-  /**
-   * @param {CloudKitRecord} record
-   * @returns {Promise<void>}
-   */
-  async #deleteRecord (record) {
+  /** @private */
+  async _deleteRecord (record) {
     if (!record.recordChangeTag) {
       throw new CloudStorageError(
         'CloudKit record is missing recordChangeTag required for delete'
       )
     }
 
-    const auth = await this.#getCloudKitAuth()
-    const response = await this.#cloudKitRequest('records/modify', auth, {
+    const auth = await this._getCloudKitAuth()
+    const response = await this._cloudKitRequest('records/modify', auth, {
       operations: [
         {
           operationType: 'delete',
           record: {
-            recordType: this.#recordType,
-            recordName: this.#recordName,
+            recordType: this._recordType,
+            recordName: this._recordName,
             recordChangeTag: record.recordChangeTag
           }
         }
       ],
-      zoneID: this.#zoneId()
+      zoneID: this._zoneId()
     })
 
     if (response.status === 404) return
@@ -448,15 +436,12 @@ export class CloudKitProvider {
     }
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'CloudKit record delete failed')
+      throw await this._httpError(response, 'CloudKit record delete failed')
     }
   }
 
-  /**
-   * @param {CloudKitRecord} record
-   * @returns {CloudEncryptionKeyFile}
-   */
-  #recordToPayload (record) {
+  /** @private */
+  _recordToPayload (record) {
     const fields = record.fields ?? {}
     const encryptionKey = fields.encryptionKey?.value
     const savedAt = fields.savedAt?.value
@@ -479,12 +464,8 @@ export class CloudKitProvider {
     }
   }
 
-  /**
-   * @param {Response} response
-   * @param {string} context
-   * @returns {Promise<CloudHttpError>}
-   */
-  async #httpError (response, context) {
+  /** @private */
+  async _httpError (response, context) {
     let detail = ''
     try {
       const text = await response.text()
@@ -503,14 +484,12 @@ export class CloudKitProvider {
   // Private helpers
   // -------------------------------------------------------------------------
 
-  /**
-   * @returns {Promise<void>}
-   */
-  async #assertAvailable () {
+  /** @private */
+  async _assertAvailable () {
     try {
-      await this.#probeCloudKit()
+      await this._probeCloudKit()
     } catch (cause) {
-      if (this.#isAuthError(cause)) {
+      if (this._isAuthError(cause)) {
         throw new CloudAuthError(
           'CloudKit user not signed in — authentication failed',
           cause
@@ -523,23 +502,16 @@ export class CloudKitProvider {
     }
   }
 
-  /**
-   * @param {unknown} cause
-   * @returns {boolean}
-   */
-  #isAuthError (cause) {
+  /** @private */
+  _isAuthError (cause) {
     if (cause instanceof CloudHttpError) {
       return cause.status === 401 || cause.status === 403
     }
     return false
   }
 
-  /**
-   * @param {unknown} cause
-   * @param {string} context
-   * @returns {Error}
-   */
-  #mapError (cause, context) {
+  /** @private */
+  _mapError (cause, context) {
     if (cause instanceof CloudHttpError) {
       const status = cause.status
       const reason = cause.message.toUpperCase()

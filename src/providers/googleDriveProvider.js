@@ -54,37 +54,35 @@ const APP_DATA_FOLDER = 'appDataFolder'
  * @implements {CloudProvider}
  */
 export class GoogleDriveProvider {
-  /** @type {() => Promise<string>} */
-  #getAccessToken
-  /** @type {string} */
-  #filePath
-  /** @type {string} */
-  #cloudEmail
-  /** @type {number} */
-  #timeoutMs
-  /** @type {typeof globalThis.fetch} */
-  #fetchFn = globalThis.fetch.bind(globalThis)
-
   /**
-   * @param {GoogleDriveConfig} config
+   * @param {GoogleDriveConfig} config - Provider configuration.
+   * @throws {CloudValidationError} if neither `accessToken` nor `getAccessToken` is provided, or if `timeout` is not a positive number.
    */
   constructor (config) {
+    let getAccessToken
     if (config.getAccessToken) {
-      this.#getAccessToken = config.getAccessToken
+      getAccessToken = config.getAccessToken
     } else if (config.accessToken) {
       const token = config.accessToken
-      this.#getAccessToken = async () => token
+      getAccessToken = async () => token
     } else {
       throw new CloudValidationError(
         'GoogleDriveConfig requires accessToken or getAccessToken'
       )
     }
 
-    this.#filePath = config.filePath ?? DEFAULT_FILE_PATH
-    this.#cloudEmail = config.cloudEmail ?? ''
-    this.#timeoutMs = config.timeout ?? DEFAULT_TIMEOUT_MS
+    /** @private */
+    this._getAccessToken = getAccessToken
+    /** @private */
+    this._filePath = config.filePath ?? DEFAULT_FILE_PATH
+    /** @private */
+    this._cloudEmail = config.cloudEmail ?? ''
+    /** @private */
+    this._timeoutMs = config.timeout ?? DEFAULT_TIMEOUT_MS
+    /** @private */
+    this._fetchFn = globalThis.fetch.bind(globalThis)
 
-    if (!Number.isFinite(this.#timeoutMs) || this.#timeoutMs <= 0) {
+    if (!Number.isFinite(this._timeoutMs) || this._timeoutMs <= 0) {
       throw new CloudValidationError(
         'GoogleDriveConfig.timeout must be a number greater than 0'
       )
@@ -96,32 +94,38 @@ export class GoogleDriveProvider {
   // -------------------------------------------------------------------------
 
   /**
-   * @param {string} encryptedKey
-   * @returns {Promise<CloudEncryptionKeyFile>}
+   * Store the encrypted master key in Google Drive `appDataFolder`,
+   * overwriting any existing backup, then verify the write succeeded.
+   *
+   * @param {string} encryptedKey - The encrypted wallet master key.
+   * @returns {Promise<CloudEncryptionKeyFile>} The stored backup payload.
+   * @throws {CloudAuthError} if the access token is invalid or expired.
+   * @throws {CloudUnavailableError} if Google Drive is unreachable.
+   * @throws {CloudStorageError} if the write fails or cannot be verified.
    */
   async upload (encryptedKey) {
     /** @type {CloudEncryptionKeyFile} */
     const payload = {
       encryptionKey: encryptedKey,
       savedAt: new Date().toISOString(),
-      cloudEmail: this.#cloudEmail
+      cloudEmail: this._cloudEmail
     }
 
     const content = JSON.stringify(payload)
 
     try {
-      const existingId = await this.#findFileId()
+      const existingId = await this._findFileId()
       if (existingId) {
-        await this.#updateFile(existingId, content)
+        await this._updateFile(existingId, content)
       } else {
-        await this.#createFile(content)
+        await this._createFile(content)
       }
     } catch (cause) {
-      throw this.#mapError(cause, 'Failed to write backup to Google Drive')
+      throw this._mapError(cause, 'Failed to write backup to Google Drive')
     }
 
     try {
-      const verified = await this.#fileExists()
+      const verified = await this._fileExists()
       if (!verified) {
         throw new CloudStorageError(
           'Google Drive backup failed: file not found after write'
@@ -130,21 +134,26 @@ export class GoogleDriveProvider {
       return payload
     } catch (cause) {
       if (cause instanceof CloudStorageError) throw cause
-      throw this.#mapError(cause, 'Failed to verify Google Drive backup')
+      throw this._mapError(cause, 'Failed to verify Google Drive backup')
     }
   }
 
   /**
-   * @returns {Promise<CloudEncryptionKeyFile | null>}
+   * Retrieve the stored backup from Google Drive.
+   *
+   * @returns {Promise<CloudEncryptionKeyFile | null>} The backup payload, or `null` if none exists.
+   * @throws {CloudAuthError} if the access token is invalid or expired.
+   * @throws {CloudUnavailableError} if Google Drive is unreachable.
+   * @throws {CloudStorageError} if the read fails or the payload is malformed.
    */
   async download () {
     /** @type {string | null} */
     let fileId
     try {
-      fileId = await this.#findFileId()
+      fileId = await this._findFileId()
     } catch (cause) {
-      if (this.#isNotFoundError(cause)) return null
-      throw this.#mapError(cause, 'Failed to check Google Drive file existence')
+      if (this._isNotFoundError(cause)) return null
+      throw this._mapError(cause, 'Failed to check Google Drive file existence')
     }
 
     if (!fileId) return null
@@ -152,43 +161,51 @@ export class GoogleDriveProvider {
     /** @type {string} */
     let raw
     try {
-      raw = await this.#readFileContent(fileId)
+      raw = await this._readFileContent(fileId)
     } catch (cause) {
-      if (this.#isNotFoundError(cause)) return null
-      throw this.#mapError(cause, 'Failed to read backup from Google Drive')
+      if (this._isNotFoundError(cause)) return null
+      throw this._mapError(cause, 'Failed to read backup from Google Drive')
     }
 
-    return this.#parsePayload(raw)
+    return this._parsePayload(raw)
   }
 
   /**
+   * Permanently delete the backup from Google Drive. Idempotent — a missing
+   * file is treated as success.
+   *
    * @returns {Promise<void>}
+   * @throws {CloudAuthError} if the access token is invalid or expired.
+   * @throws {CloudUnavailableError} if Google Drive is unreachable.
+   * @throws {CloudStorageError} if the delete fails.
    */
   async delete () {
     /** @type {string | null} */
     let fileId
     try {
-      fileId = await this.#findFileId()
+      fileId = await this._findFileId()
     } catch (cause) {
-      if (this.#isNotFoundError(cause)) return
-      throw this.#mapError(cause, 'Failed to check Google Drive file existence')
+      if (this._isNotFoundError(cause)) return
+      throw this._mapError(cause, 'Failed to check Google Drive file existence')
     }
 
     if (!fileId) return
 
     try {
-      await this.#deleteFile(fileId)
+      await this._deleteFile(fileId)
     } catch (cause) {
-      throw this.#mapError(cause, 'Failed to delete backup from Google Drive')
+      throw this._mapError(cause, 'Failed to delete backup from Google Drive')
     }
   }
 
   /**
-   * @returns {Promise<boolean>}
+   * Lightweight probe that checks whether Google Drive is reachable.
+   *
+   * @returns {Promise<boolean>} `true` if reachable, `false` otherwise (never throws).
    */
   async isAvailable () {
     try {
-      const response = await this.#driveRequest(
+      const response = await this._driveRequest(
         `${DRIVE_API_BASE}/about?fields=user`
       )
       return response.ok
@@ -198,13 +215,15 @@ export class GoogleDriveProvider {
   }
 
   /**
-   * @returns {Promise<boolean>}
+   * Check whether a backup file exists without downloading its content.
+   *
+   * @returns {Promise<boolean>} `true` if a backup exists, `false` otherwise (never throws).
    */
   async exists () {
     try {
-      return await this.#fileExists()
+      return await this._fileExists()
     } catch (cause) {
-      if (this.#isNotFoundError(cause)) return false
+      if (this._isNotFoundError(cause)) return false
       return false
     }
   }
@@ -213,47 +232,37 @@ export class GoogleDriveProvider {
   // Drive API helpers
   // -------------------------------------------------------------------------
 
-  /**
-   * @param {string} value
-   * @returns {string}
-   */
-  #escapeDriveQueryValue (value) {
+  /** @private */
+  _escapeDriveQueryValue (value) {
     return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   }
 
-  /**
-   * @returns {Promise<string | null>}
-   */
-  async #findFileId () {
-    const fileName = this.#filePath.split('/').pop() ?? this.#filePath
-    const q = `name='${this.#escapeDriveQueryValue(fileName)}' and '${APP_DATA_FOLDER}' in parents and trashed=false`
+  /** @private */
+  async _findFileId () {
+    const fileName = this._filePath.split('/').pop() ?? this._filePath
+    const q = `name='${this._escapeDriveQueryValue(fileName)}' and '${APP_DATA_FOLDER}' in parents and trashed=false`
     const url = `${DRIVE_API_BASE}/files?spaces=${APP_DATA_FOLDER}&q=${encodeURIComponent(q)}&fields=files(id,name)`
-    const response = await this.#driveRequest(url)
+    const response = await this._driveRequest(url)
 
     if (response.status === 404) return null
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'Failed to list Google Drive files')
+      throw await this._httpError(response, 'Failed to list Google Drive files')
     }
 
     const body = await response.json()
     return body.files?.[0]?.id ?? null
   }
 
-  /**
-   * @returns {Promise<boolean>}
-   */
-  async #fileExists () {
-    const id = await this.#findFileId()
+  /** @private */
+  async _fileExists () {
+    const id = await this._findFileId()
     return id !== null
   }
 
-  /**
-   * @param {string} content
-   * @returns {Promise<void>}
-   */
-  async #createFile (content) {
-    const fileName = this.#filePath.split('/').pop() ?? this.#filePath
+  /** @private */
+  async _createFile (content) {
+    const fileName = this._filePath.split('/').pop() ?? this._filePath
     const boundary = `wdk_backup_${Date.now()}`
     const metadata = JSON.stringify({
       name: fileName,
@@ -272,7 +281,7 @@ export class GoogleDriveProvider {
       ''
     ].join('\r\n')
 
-    const response = await this.#driveRequest(
+    const response = await this._driveRequest(
       `${DRIVE_UPLOAD_BASE}/files?uploadType=multipart`,
       {
         method: 'POST',
@@ -284,17 +293,13 @@ export class GoogleDriveProvider {
     )
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'Failed to create Google Drive file')
+      throw await this._httpError(response, 'Failed to create Google Drive file')
     }
   }
 
-  /**
-   * @param {string} fileId
-   * @param {string} content
-   * @returns {Promise<void>}
-   */
-  async #updateFile (fileId, content) {
-    const response = await this.#driveRequest(
+  /** @private */
+  async _updateFile (fileId, content) {
+    const response = await this._driveRequest(
       `${DRIVE_UPLOAD_BASE}/files/${fileId}?uploadType=media`,
       {
         method: 'PATCH',
@@ -306,16 +311,13 @@ export class GoogleDriveProvider {
     )
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'Failed to update Google Drive file')
+      throw await this._httpError(response, 'Failed to update Google Drive file')
     }
   }
 
-  /**
-   * @param {string} fileId
-   * @returns {Promise<string>}
-   */
-  async #readFileContent (fileId) {
-    const response = await this.#driveRequest(
+  /** @private */
+  async _readFileContent (fileId) {
+    const response = await this._driveRequest(
       `${DRIVE_API_BASE}/files/${fileId}?alt=media`
     )
 
@@ -324,18 +326,15 @@ export class GoogleDriveProvider {
     }
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'Failed to download Google Drive file')
+      throw await this._httpError(response, 'Failed to download Google Drive file')
     }
 
     return await response.text()
   }
 
-  /**
-   * @param {string} fileId
-   * @returns {Promise<void>}
-   */
-  async #deleteFile (fileId) {
-    const response = await this.#driveRequest(
+  /** @private */
+  async _deleteFile (fileId) {
+    const response = await this._driveRequest(
       `${DRIVE_API_BASE}/files/${fileId}`,
       { method: 'DELETE' }
     )
@@ -343,24 +342,20 @@ export class GoogleDriveProvider {
     if (response.status === 404) return
 
     if (!response.ok) {
-      throw await this.#httpError(response, 'Failed to delete Google Drive file')
+      throw await this._httpError(response, 'Failed to delete Google Drive file')
     }
   }
 
-  /**
-   * @param {string} url
-   * @param {RequestInit} [init]
-   * @returns {Promise<Response>}
-   */
-  async #driveRequest (url, init = {}) {
+  /** @private */
+  async _driveRequest (url, init = {}) {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs)
+    const timeout = setTimeout(() => controller.abort(), this._timeoutMs)
 
     try {
-      const accessToken = await this.#getAccessToken()
+      const accessToken = await this._getAccessToken()
       const headers = new Headers(init.headers)
       headers.set('Authorization', `Bearer ${accessToken}`)
-      return await this.#fetchFn(url, {
+      return await this._fetchFn(url, {
         ...init,
         headers,
         signal: controller.signal
@@ -379,12 +374,8 @@ export class GoogleDriveProvider {
     }
   }
 
-  /**
-   * @param {Response} response
-   * @param {string} context
-   * @returns {Promise<CloudHttpError>}
-   */
-  async #httpError (response, context) {
+  /** @private */
+  async _httpError (response, context) {
     let detail = ''
     try {
       const text = await response.text()
@@ -403,11 +394,8 @@ export class GoogleDriveProvider {
   // Private helpers
   // -------------------------------------------------------------------------
 
-  /**
-   * @param {unknown} cause
-   * @returns {boolean}
-   */
-  #isNotFoundError (cause) {
+  /** @private */
+  _isNotFoundError (cause) {
     if (cause instanceof CloudHttpError) {
       return cause.status === 404
     }
@@ -415,12 +403,8 @@ export class GoogleDriveProvider {
     return msg.includes('404') || msg.includes('not found')
   }
 
-  /**
-   * @param {unknown} cause
-   * @param {string} context
-   * @returns {Error}
-   */
-  #mapError (cause, context) {
+  /** @private */
+  _mapError (cause, context) {
     if (cause instanceof CloudHttpError) {
       const status = cause.status
 
@@ -460,11 +444,8 @@ export class GoogleDriveProvider {
     return new CloudStorageError(`${context}: ${msg}`, cause)
   }
 
-  /**
-   * @param {string} raw
-   * @returns {CloudEncryptionKeyFile}
-   */
-  #parsePayload (raw) {
+  /** @private */
+  _parsePayload (raw) {
     /** @type {unknown} */
     let parsed
     try {

@@ -7,6 +7,8 @@ export class CloudBackup {
      * @param {CloudProvider} provider
      */
     constructor(provider: CloudProvider);
+    /** @private */
+    private _provider;
     /**
      * Upload the encrypted master key to cloud storage.
      *
@@ -50,7 +52,8 @@ export class CloudBackup {
      * @returns {Promise<boolean>} `true` if the backup file exists, `false` otherwise (never throws).
      */
     exists(): Promise<boolean>;
-    #private;
+    /** @private */
+    private _validateKey;
 }
 export type CloudProvider = import("./types.js").CloudProvider;
 export type CloudEncryptionKeyFile = import("./types.js").CloudEncryptionKeyFile;
