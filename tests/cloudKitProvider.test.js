@@ -404,6 +404,30 @@ describe('CloudKitProvider.delete', () => {
     )
   })
 
+  it('throws when delete fails at the record level (HTTP 200 with reason)', async () => {
+    mockLookupNotFound()
+    mockLookupFound()
+    mockJson({
+      records: [{ recordName: RECORD_NAME, reason: 'SERVER_RECORD_CHANGED' }]
+    })
+
+    await expectError(
+      makeProvider().delete(),
+      CloudUnavailableError,
+      /Failed to delete/
+    )
+  })
+
+  it('treats a RECORD_NOT_FOUND reason on delete as idempotent success', async () => {
+    mockLookupNotFound()
+    mockLookupFound()
+    mockJson({
+      records: [{ recordName: RECORD_NAME, reason: 'RECORD_NOT_FOUND' }]
+    })
+
+    await expect(makeProvider().delete()).resolves.toBeUndefined()
+  })
+
   it('throws CloudUnavailableError when CloudKit is not available', async () => {
     fetchMock.mockRejectOnce(new Error('network unavailable'))
 

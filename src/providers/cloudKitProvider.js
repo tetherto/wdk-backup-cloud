@@ -438,6 +438,15 @@ export class CloudKitProvider {
     if (!response.ok) {
       throw await this._httpError(response, 'CloudKit record delete failed')
     }
+
+    // CloudKit reports per-operation failures as HTTP 200 with a `reason` on
+    // the record, so inspect the body (as _saveRecord does). A missing record
+    // is idempotent success; any other reason is a real failure.
+    const body = await response.json()
+    const result = body.records?.[0]
+    if (result?.reason && result.reason !== 'RECORD_NOT_FOUND') {
+      throw new CloudHttpError(result.reason, null)
+    }
   }
 
   /** @private */
