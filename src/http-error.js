@@ -15,6 +15,8 @@
 /**
  * Internal HTTP/network error carrying a status code when available.
  * Not part of the public API — providers map this to typed Cloud* errors.
+ *
+ * @internal
  */
 export class CloudHttpError extends Error {
   /**

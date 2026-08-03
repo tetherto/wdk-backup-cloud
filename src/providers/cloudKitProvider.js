@@ -39,6 +39,7 @@ import { CloudHttpError } from '../http-error.js'
  */
 
 /**
+ * @internal
  * @typedef {Object} CloudKitFieldValue
  * @property {string | number} [value]
  */
@@ -46,6 +47,7 @@ import { CloudHttpError } from '../http-error.js'
 /**
  * CloudKit record shape (subset of fields we care about).
  *
+ * @internal
  * @typedef {Object} CloudKitRecord
  * @property {string} [recordName]
  * @property {string} [recordType]
