@@ -104,16 +104,3 @@ export type CloudEncryptionKeyFile = import("../types.js").CloudEncryptionKeyFil
 export type CloudKitAuthContext = import("../types.js").CloudKitAuthContext;
 export type CloudProvider = import("../types.js").CloudProvider;
 export type CloudKitConfig = import("../types.js").CloudKitConfig;
-export type CloudKitFieldValue = {
-    value?: string | number;
-};
-/**
- * CloudKit record shape (subset of fields we care about).
- */
-export type CloudKitRecord = {
-    recordName?: string;
-    recordType?: string;
-    recordChangeTag?: string;
-    reason?: string;
-    fields?: Record<string, CloudKitFieldValue>;
-};
