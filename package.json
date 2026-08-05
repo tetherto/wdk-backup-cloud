@@ -20,6 +20,9 @@
   "main": "index.js",
   "type": "module",
   "types": "./types",
+  "dependencies": {
+    "bare-node-runtime": "^1.5.0"
+  },
   "scripts": {
     "build:types": "tsc",
     "lint": "standard",
@@ -37,6 +40,7 @@
   "exports": {
     ".": {
       "types": "./types/index.d.ts",
+      "bare": "./bare.js",
       "default": "./index.js"
     },
     "./package": {
@@ -49,6 +53,7 @@
   },
   "standard": {
     "ignore": [
+      "bare.js",
       "tests/**/*.js"
     ]
   }

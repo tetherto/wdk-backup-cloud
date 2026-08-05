@@ -21,6 +21,14 @@ npm install @tetherto/wdk-backup-cloud
 
 **This SDK performs NO OAuth flows.** The caller supplies credentials.
 
+### Runtime compatibility
+
+Runs on:
+
+- Node 18+
+- React Native (Hermes)
+- Bare
+
 ---
 
 ## Quick Start
