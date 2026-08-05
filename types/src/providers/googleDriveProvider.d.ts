@@ -84,6 +84,35 @@ export class GoogleDriveProvider implements CloudProvider {
     /** @private */
     private _parsePayload;
 }
-export type CloudEncryptionKeyFile = import("../types.js").CloudEncryptionKeyFile;
-export type CloudProvider = import("../types.js").CloudProvider;
-export type GoogleDriveConfig = import("../types.js").GoogleDriveConfig;
+export type CloudEncryptionKeyFile = import("../cloudBackup.js").CloudEncryptionKeyFile;
+export type CloudProvider = import("../cloudBackup.js").CloudProvider;
+/**
+ * Config for {@link GoogleDriveProvider}.
+ * The caller is responsible for acquiring and refreshing the token.
+ * This SDK performs NO OAuth flows.
+ *
+ * Provide either `accessToken` (static) or `getAccessToken` (fresh per request).
+ * If both are set, `getAccessToken` wins.
+ */
+export type GoogleDriveConfig = {
+    /**
+     * - A valid OAuth2 access token scoped to `drive.appdata`.
+     */
+    accessToken?: string;
+    /**
+     * - Returns a fresh OAuth2 access token before each Drive API call.
+     */
+    getAccessToken?: () => Promise<string>;
+    /**
+     * - Override the backup file path. Default: `wallet_backup_key.json`.
+     */
+    filePath?: string;
+    /**
+     * - The user's cloud email — stored inside the backup file for traceability.
+     */
+    cloudEmail?: string;
+    /**
+     * - Network timeout in milliseconds for Google Drive API calls. Default: 30000.
+     */
+    timeout?: number;
+};

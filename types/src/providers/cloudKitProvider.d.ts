@@ -100,7 +100,64 @@ export class CloudKitProvider implements CloudProvider {
     /** @private */
     private _mapError;
 }
-export type CloudEncryptionKeyFile = import("../types.js").CloudEncryptionKeyFile;
-export type CloudKitAuthContext = import("../types.js").CloudKitAuthContext;
-export type CloudProvider = import("../types.js").CloudProvider;
-export type CloudKitConfig = import("../types.js").CloudKitConfig;
+export type CloudEncryptionKeyFile = import("../cloudBackup.js").CloudEncryptionKeyFile;
+export type CloudProvider = import("../cloudBackup.js").CloudProvider;
+/**
+ * CloudKit Web Services credentials supplied by the caller.
+ * The app obtains these via CloudKit JS / native CloudKit sign-in.
+ */
+export type CloudKitAuthContext = {
+    /**
+     * - API token from the CloudKit Dashboard (web services).
+     */
+    apiToken: string;
+    /**
+     * - User web auth token for private database access.
+     */
+    webAuthToken: string;
+};
+/**
+ * Config for {@link CloudKitProvider}.
+ */
+export type CloudKitConfig = {
+    /**
+     * - CloudKit container identifier, e.g. `iCloud.com.example.app`.
+     */
+    containerIdentifier: string;
+    /**
+     * - CloudKit environment.
+     */
+    environment: "development" | "production";
+    /**
+     * - Custom zone name. Default: `_defaultZone`.
+     */
+    zoneName?: string;
+    /**
+     * - Stable record name for the backup. Default: `wallet_backup_key`.
+     */
+    recordName?: string;
+    /**
+     * - CloudKit record type. Default: `WalletBackup`.
+     */
+    recordType?: string;
+    /**
+     * - The user's cloud email — stored inside the backup record for traceability.
+     */
+    cloudEmail?: string;
+    /**
+     * - Returns fresh CloudKit web auth credentials before each API call.
+     */
+    getCloudKitAuth: () => Promise<CloudKitAuthContext>;
+    /**
+     * - Max number of record fetch retries during download. Default: `10`.
+     */
+    maxSyncRetries?: number;
+    /**
+     * - Delay in ms between fetch retries during download. Default: `1000`.
+     */
+    syncRetryDelayMs?: number;
+    /**
+     * - Network timeout in milliseconds. Default: `30000`.
+     */
+    timeout?: number;
+};

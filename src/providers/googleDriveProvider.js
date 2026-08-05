@@ -31,9 +31,24 @@ import {
 import { CloudHttpError } from '../http-error.js'
 
 /**
- * @typedef {import('../types.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
- * @typedef {import('../types.js').CloudProvider} CloudProvider
- * @typedef {import('../types.js').GoogleDriveConfig} GoogleDriveConfig
+ * @typedef {import('../cloudBackup.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
+ * @typedef {import('../cloudBackup.js').CloudProvider} CloudProvider
+ */
+
+/**
+ * Config for {@link GoogleDriveProvider}.
+ * The caller is responsible for acquiring and refreshing the token.
+ * This SDK performs NO OAuth flows.
+ *
+ * Provide either `accessToken` (static) or `getAccessToken` (fresh per request).
+ * If both are set, `getAccessToken` wins.
+ *
+ * @typedef {Object} GoogleDriveConfig
+ * @property {string} [accessToken] - A valid OAuth2 access token scoped to `drive.appdata`.
+ * @property {() => Promise<string>} [getAccessToken] - Returns a fresh OAuth2 access token before each Drive API call.
+ * @property {string} [filePath] - Override the backup file path. Default: `wallet_backup_key.json`.
+ * @property {string} [cloudEmail] - The user's cloud email — stored inside the backup file for traceability.
+ * @property {number} [timeout] - Network timeout in milliseconds for Google Drive API calls. Default: 30000.
  */
 
 // ---------------------------------------------------------------------------

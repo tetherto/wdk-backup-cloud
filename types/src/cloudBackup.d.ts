@@ -1,7 +1,3 @@
-/**
- * @typedef {import('./types.js').CloudProvider} CloudProvider
- * @typedef {import('./types.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
- */
 export class CloudBackup {
     /**
      * @param {CloudProvider} provider
@@ -55,5 +51,39 @@ export class CloudBackup {
     /** @private */
     private _validateKey;
 }
-export type CloudProvider = import("./types.js").CloudProvider;
-export type CloudEncryptionKeyFile = import("./types.js").CloudEncryptionKeyFile;
+/**
+ * The JSON blob written to cloud storage by every provider.
+ */
+export type CloudEncryptionKeyFile = {
+    /**
+     * - The encrypted wallet master key.
+     */
+    encryptionKey: string;
+    /**
+     * - ISO-8601 UTC timestamp when the backup was saved.
+     */
+    savedAt: string;
+    /**
+     * - Cloud user email that owns this backup.
+     */
+    cloudEmail: string;
+};
+/**
+ * Abstraction over any cloud storage backend.
+ * Implementations should expose cloud operations without persisting backup
+ * data locally inside this SDK.
+ *
+ * - `upload` stores `encryptedKey`; if a backup already exists it MUST be
+ *   overwritten.
+ * - `download` retrieves the stored backup, or `null` if none exists yet.
+ * - `delete` permanently removes the backup and MUST be idempotent.
+ * - `isAvailable` is a lightweight probe — not a full upload/download.
+ * - `exists` reports whether a backup file exists without downloading it.
+ */
+export type CloudProvider = {
+    upload: (encryptedKey: string) => Promise<CloudEncryptionKeyFile>;
+    download: () => Promise<CloudEncryptionKeyFile | null>;
+    delete: () => Promise<void>;
+    isAvailable: () => Promise<boolean>;
+    exists: () => Promise<boolean>;
+};

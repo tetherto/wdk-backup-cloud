@@ -3,7 +3,7 @@ export default {
   testTimeout: 60000,
   setupFiles: ['<rootDir>/tests/jest/setup.js'],
   testPathIgnorePatterns: ['/node_modules/', '/tests/jest/'],
-  collectCoverageFrom: ['src/**/*.js', '!src/types.js'],
+  collectCoverageFrom: ['src/**/*.js'],
   coverageThreshold: {
     global: {
       lines: 90,

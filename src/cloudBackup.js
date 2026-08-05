@@ -26,8 +26,32 @@
 import { CloudValidationError } from './errors.js'
 
 /**
- * @typedef {import('./types.js').CloudProvider} CloudProvider
- * @typedef {import('./types.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
+ * The JSON blob written to cloud storage by every provider.
+ *
+ * @typedef {Object} CloudEncryptionKeyFile
+ * @property {string} encryptionKey - The encrypted wallet master key.
+ * @property {string} savedAt - ISO-8601 UTC timestamp when the backup was saved.
+ * @property {string} cloudEmail - Cloud user email that owns this backup.
+ */
+
+/**
+ * Abstraction over any cloud storage backend.
+ * Implementations should expose cloud operations without persisting backup
+ * data locally inside this SDK.
+ *
+ * - `upload` stores `encryptedKey`; if a backup already exists it MUST be
+ *   overwritten.
+ * - `download` retrieves the stored backup, or `null` if none exists yet.
+ * - `delete` permanently removes the backup and MUST be idempotent.
+ * - `isAvailable` is a lightweight probe — not a full upload/download.
+ * - `exists` reports whether a backup file exists without downloading it.
+ *
+ * @typedef {Object} CloudProvider
+ * @property {(encryptedKey: string) => Promise<CloudEncryptionKeyFile>} upload
+ * @property {() => Promise<CloudEncryptionKeyFile | null>} download
+ * @property {() => Promise<void>} delete
+ * @property {() => Promise<boolean>} isAvailable
+ * @property {() => Promise<boolean>} exists
  */
 
 export class CloudBackup {

@@ -32,10 +32,33 @@ import {
 import { CloudHttpError } from '../http-error.js'
 
 /**
- * @typedef {import('../types.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
- * @typedef {import('../types.js').CloudKitAuthContext} CloudKitAuthContext
- * @typedef {import('../types.js').CloudProvider} CloudProvider
- * @typedef {import('../types.js').CloudKitConfig} CloudKitConfig
+ * @typedef {import('../cloudBackup.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
+ * @typedef {import('../cloudBackup.js').CloudProvider} CloudProvider
+ */
+
+/**
+ * CloudKit Web Services credentials supplied by the caller.
+ * The app obtains these via CloudKit JS / native CloudKit sign-in.
+ *
+ * @typedef {Object} CloudKitAuthContext
+ * @property {string} apiToken - API token from the CloudKit Dashboard (web services).
+ * @property {string} webAuthToken - User web auth token for private database access.
+ */
+
+/**
+ * Config for {@link CloudKitProvider}.
+ *
+ * @typedef {Object} CloudKitConfig
+ * @property {string} containerIdentifier - CloudKit container identifier, e.g. `iCloud.com.example.app`.
+ * @property {'development' | 'production'} environment - CloudKit environment.
+ * @property {string} [zoneName] - Custom zone name. Default: `_defaultZone`.
+ * @property {string} [recordName] - Stable record name for the backup. Default: `wallet_backup_key`.
+ * @property {string} [recordType] - CloudKit record type. Default: `WalletBackup`.
+ * @property {string} [cloudEmail] - The user's cloud email — stored inside the backup record for traceability.
+ * @property {() => Promise<CloudKitAuthContext>} getCloudKitAuth - Returns fresh CloudKit web auth credentials before each API call.
+ * @property {number} [maxSyncRetries] - Max number of record fetch retries during download. Default: `10`.
+ * @property {number} [syncRetryDelayMs] - Delay in ms between fetch retries during download. Default: `1000`.
+ * @property {number} [timeout] - Network timeout in milliseconds. Default: `30000`.
  */
 
 /**

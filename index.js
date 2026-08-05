@@ -17,11 +17,11 @@
  */
 
 /**
- * @typedef {import('./src/types.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
- * @typedef {import('./src/types.js').CloudProvider} CloudProvider
- * @typedef {import('./src/types.js').GoogleDriveConfig} GoogleDriveConfig
- * @typedef {import('./src/types.js').CloudKitConfig} CloudKitConfig
- * @typedef {import('./src/types.js').CloudKitAuthContext} CloudKitAuthContext
+ * @typedef {import('./src/cloudBackup.js').CloudEncryptionKeyFile} CloudEncryptionKeyFile
+ * @typedef {import('./src/cloudBackup.js').CloudProvider} CloudProvider
+ * @typedef {import('./src/providers/googleDriveProvider.js').GoogleDriveConfig} GoogleDriveConfig
+ * @typedef {import('./src/providers/cloudKitProvider.js').CloudKitConfig} CloudKitConfig
+ * @typedef {import('./src/providers/cloudKitProvider.js').CloudKitAuthContext} CloudKitAuthContext
  * @typedef {import('./src/errors.js').CloudErrorCode} CloudErrorCode
  */
 
