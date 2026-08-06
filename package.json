@@ -1,0 +1,60 @@
+{
+  "name": "@tetherto/wdk-backup-cloud",
+  "version": "1.0.0-beta.1",
+  "description": "Cloud backup SDK for wallet apps — Google Drive & CloudKit providers",
+  "keywords": [
+    "wallet",
+    "backup",
+    "cloud",
+    "cloudkit",
+    "google-drive",
+    "encrypted",
+    "wdk"
+  ],
+  "author": "Tether",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tetherto/wdk-backup-cloud.git"
+  },
+  "main": "index.js",
+  "type": "module",
+  "types": "./types",
+  "dependencies": {
+    "bare-node-runtime": "^1.5.0"
+  },
+  "scripts": {
+    "build:types": "tsc",
+    "lint": "standard",
+    "lint:fix": "standard --fix",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage"
+  },
+  "devDependencies": {
+    "cross-env": "7.0.3",
+    "jest": "29.7.0",
+    "jest-fetch-mock": "^3.0.3",
+    "standard": "17.1.2",
+    "typescript": "5.8.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "bare": "./bare.js",
+      "default": "./index.js"
+    },
+    "./package": {
+      "default": "./package.json"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "standard": {
+    "ignore": [
+      "bare.js",
+      "tests/**/*.js"
+    ]
+  }
+}
