@@ -1,6 +1,8 @@
 # @tetherto/wdk-backup-cloud
 
-Cloud backup SDK for wallet apps. Stores an encrypted master key in **Google Drive** (`appDataFolder`) or **CloudKit** (private database) via a clean provider abstraction.
+Cloud backup SDK for wallet apps built with WDK (Wallet Development Kit) by Tether. Stores an encrypted master key in **Google Drive** (`appDataFolder`) or **CloudKit** (private database) via a clean provider abstraction.
+
+See the [Cloud Backup documentation](https://docs.wdk.tether.io/tools/backup-cloud/).
 
 ---
 
